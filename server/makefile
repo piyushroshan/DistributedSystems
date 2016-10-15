@@ -6,7 +6,7 @@ LDFLAGS=-g $(shell root-config --ldflags)
 LDLIBS=$(shell root-config --libs)
 
 SRCS=server.c
-OBJS=$(subst .cc,.o,$(SRCS))
+OBJS=$(subst .c,.o,$(SRCS))
 
 all: server
 
