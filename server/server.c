@@ -13,22 +13,31 @@
 #include <netdb.h>
 
 #define PORT "3490"   // port we're listening on
-typedef struct Client_list{
+#define MAX_GROUPS 10
+typedef struct Client{
     int     sockfd;
     int     msg_type;
     int     group;
     char    *buf;
-    struct Client_list *next_client;
-}client_list;
+    struct Client *next_client;
+}client_node;
+
+typedef struct Group_members{
+    client_node *client; 
+    struct Group_members *next;
+}group_node;
 
 typedef struct Group_member_list {
-    client_list *my_clients;
     int total_clients;
-}group_info;
+    int group_id;
+    char *message;
+    group_node *group;
+    group_node *group_head;
+}group_list;
 
-client_list* client_head = NULL;
+client_node* client_head = NULL;
 int num_clients = 0;
-//group_info group_list = { 0, 0, 0 , {0}, NULL};
+group_list group_data[MAX_GROUPS];
 // get sockaddr, IPv4 or IPv6:
 void *get_in_addr(struct sockaddr *sa)
 {
@@ -39,11 +48,11 @@ void *get_in_addr(struct sockaddr *sa)
 }
 
 void store_new_client(int newfd) {
-     client_list *new_client = NULL;
-     client_list *tmp_head = client_head;
-     new_client = (client_list*)calloc(1,sizeof(client_list));
+     client_node *new_client = NULL;
+     client_node *tmp_head = client_head;
+     new_client = (client_node*)calloc(1,sizeof(client_node));
      if(client_head == NULL){
-        printf("First  client \n");
+        //printf("First  client \n");
         new_client->sockfd = newfd;
         new_client->next_client = NULL;
         client_head = new_client;
@@ -60,8 +69,8 @@ void store_new_client(int newfd) {
 }
 
 void delete_existing_client(int fd){
-     client_list *delete_client = NULL;
-     client_list *prev_node = client_head;
+     client_node *delete_client = NULL;
+     client_node *prev_node = client_head;
      /* Node to be deleted is head node*/
      if( client_head && client_head->sockfd == fd) {
         if(client_head->next_client == NULL) {
@@ -83,9 +92,9 @@ void delete_existing_client(int fd){
 }
 
 /* Checks whether the client is present in linked list */
-client_list* find_client( int client_fd)
+client_node* find_client( int client_fd)
 {
-    client_list* current = client_head;  // Initialize current
+    client_node* current = client_head;  // Initialize current
     while (current != NULL)
     {
         if (current->sockfd == client_fd)
@@ -95,30 +104,77 @@ client_list* find_client( int client_fd)
     return NULL;
 }
 void list_all_clients(){
-     client_list* tmp_ptr = client_head;
+     client_node* tmp_ptr = client_head;
      while(tmp_ptr != NULL){
-          printf("Client available: %d\n",tmp_ptr->sockfd);
+          printf("Client data: %s\n",tmp_ptr->buf);
           tmp_ptr = tmp_ptr->next_client;
      }
 }
 
+void create_dummy_groups(){
+     int index = 0;
+     for ( index = 0; index < MAX_GROUPS; index++) {
+          group_data[index].group_id = index+1;
+          group_data[index].total_clients = 0;
+          group_data[index].message = "";
+          group_data[index].group = NULL;
+          group_data[index].group_head = NULL;
+     }
+}
+void add_to_group(client_node *client , int group) {
+     if (group < MAX_GROUPS) {
+        group_node *new_node = NULL;
+        new_node = (group_node *)calloc(1,sizeof(new_node));
+        new_node->client = client;
+        new_node->next = NULL;
+        group_data[group].group_id = group;
+        (group_data[group].total_clients)++;
+        if (group_data[group].group == NULL) {
+           printf(" First client for group %d\n",group);
+           group_data[group].group = new_node; 
+           group_data[group].group_head = new_node;
+        } else {
+           printf(" Client added to group %d \n",group);
+           group_node *tmp_node = group_data[group].group_head;
+           while(tmp_node->next != NULL)
+             tmp_node = tmp_node->next;
+           tmp_node->client = client;
+        }
+    }
+}
+
 void read_input_data(int client_fd, char *buff, int size ){
-     client_list* client;
+     client_node* client;
+     int grp;
+     //printf(" Searching for client %d ",client_fd);
      client = find_client(client_fd);
      if(client != NULL){
-        printf("Client found \n");
-        if(( client->msg_type == 0 )){
-            printf(" Group info has not been added\n");
-            client->group = atoi(buff);
-            printf("Client added to group %d\n",client->group);
+        //printf("Client found %d \n",client->sockfd);
+        if( client->msg_type == 0 ){
+            grp = atoi(buff);
+            client->group = grp;
+            add_to_group(client, grp);
+            //printf("Client added to group %d\n",client->group);
         } else {
             client->buf=buff;
-            printf("store message from client %s",client->buf);
+            //printf("Store message %s from client %d",client->buf, client->sockfd);
         }
      (client->msg_type)++;
      }
 }
-
+void zzz(){
+    int index = 0;
+    group_node *tmp = NULL;
+    for( index = 0; index <MAX_GROUPS; index++) {
+       if (group_data[index].total_clients != 0) {
+           tmp = group_data[index].group_head;
+           printf(" MESSAGES FROM GROUP %d clients\n", index);
+           while (tmp != NULL) {
+             printf("%s \n",tmp->client->buf);
+           }
+       }
+    }
+}
 int main(void)
 {
     fd_set master;    // master file descriptor list
@@ -188,9 +244,11 @@ int main(void)
 
     // keep track of the biggest file descriptor
     fdmax = listener; // so far, it's this one
+    create_dummy_groups();
     printf("Server: Started \n");
     // main loop
     for(;;) {
+        if(signal(SIGTSTP, zzz)==0) 
         read_fds = master; // copy it
         if (select(fdmax+1, &read_fds, NULL, NULL, NULL) == -1) {
             perror("select");
@@ -238,7 +296,7 @@ int main(void)
                         FD_CLR(i, &master); // remove from master set
                     } else {
                         // we got some data from a client
-                        printf("Client : %s \n",buf);
+                        //printf("Client : %s \n",buf);
                         read_input_data(i, buf, nbytes);
                         //data for display to be processed here
                     }

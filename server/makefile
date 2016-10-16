@@ -11,13 +11,13 @@ OBJS=$(subst .c,.o,$(SRCS))
 all: server
 
 tool: $(OBJS)
-	    $(CXX) $(LDFLAGS) -o tool $(OBJS) $(LDLIBS) 
+	    $(CC) $(LDFLAGS) -o tool $(OBJS) $(LDLIBS) 
 
 depend: .depend
 
 .depend: $(SRCS)
 	    rm -f ./.depend
-			    $(CXX) $(CPPFLAGS) -MM $^>>./.depend;
+			    $(CC) $(CPPFLAGS) -MM $^>>./.depend;
 
 clean:
 	    $(RM) $(OBJS)
