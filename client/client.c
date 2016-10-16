@@ -14,9 +14,9 @@
 
 #include <arpa/inet.h>
 
-#define PORT "3490" // the port client will be connecting to 
+#define PORT "4020" // the port client will be connecting to 
 
-#define MAXDATASIZE 10000 // max number of bytes we can get at once 
+#define MAXDATASIZE 1000 // max number of bytes we can get at once 
 
 // get sockaddr, IPv4 or IPv6:
 void *get_in_addr(struct sockaddr *sa) {
@@ -26,6 +26,31 @@ void *get_in_addr(struct sockaddr *sa) {
 
     return &(((struct sockaddr_in6*)sa)->sin6_addr);
 }
+
+static char *rand_string(char *str, size_t size)
+{
+    const char charset[] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJK...";
+    size_t n;
+    if (size) {
+        --size;
+        for ( n = 0; n < size; n++) {
+            int key = rand() % (int) (sizeof charset - 1);
+            str[n] = charset[key];
+        }
+        str[size] = '\0';
+    }
+    return str;
+}
+
+char* rand_string_alloc(size_t size)
+{
+     char *s = malloc(size + 1);
+     if (s) {
+         rand_string(s, size);
+     }
+     return s;
+}
+
 int main(int argc, char *argv[]){
     int sockfd, numbytes;
     char buf[MAXDATASIZE];
@@ -33,8 +58,8 @@ int main(int argc, char *argv[]){
     int rv;
     char s[INET6_ADDRSTRLEN];
     int count =100;
-    if (argc <2) {
-        fprintf(stderr,"usage: client hostname\n");
+    if (argc < 3) {
+        fprintf(stderr,"usage: client hostname group\n");
         exit(1);
     }
 
@@ -83,6 +108,10 @@ int main(int argc, char *argv[]){
  
     printf("client: received '%s'\n",buf);
     */
+    /*
+     * Send group id first
+     */
+
     memset(buf,'\0',MAXDATASIZE);
     printf("%s\n",argv[2]);
     sprintf(buf,"%s", argv[2]);
@@ -96,8 +125,8 @@ int main(int argc, char *argv[]){
         printf("Client:Message being sent: %s\n",buf);
         while(1 && count !=5) {
             memset(buf,'\0',MAXDATASIZE);
-            printf("%s\n",argv[2]);
-            sprintf(buf,"Hello server from client %s", argv[2]);
+            sleep(2);
+            snprintf(buf, MAXDATASIZE,"Client of group %s : Message: %s", argv[2], rand_string_alloc(10));
 
             if ((send(sockfd,buf, strlen(buf),0))== -1) {
                     fprintf(stderr, "Failure Sending Message\n");

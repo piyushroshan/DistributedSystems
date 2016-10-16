@@ -1,9 +1,9 @@
 CC=gcc
 CXX=g++
 RM=rm -f
-CPPFLAGS=-g #$(shell root-config --cflags)
-LDFLAGS=-g #$(shell root-config --ldflags)
-LDLIBS= -lpthread #$(shell root-config --libs)
+CPPFLAGS=-g#$(shell root-config --cflags)
+LDFLAGS=-g#$(shell root-config --ldflags)
+LDLIBS=-lpthread#$(shell root-config --libs)
 
 SRCS=server.c
 OBJS=$(subst .c,.o,$(SRCS))

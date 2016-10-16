@@ -14,14 +14,14 @@
 #include <signal.h>
 #include <pthread.h>
 
-#define PORT "3490"   // port we're listening on
+#define PORT "4020"   // port we're listening on
 #define MAX_GROUPS 100
 #define MAX_CLIENTS 255
 typedef struct Client{
     int     sockfd;
     int     msg_type;
     int     group;
-    char    *buf;
+    char    buf[1000];
     struct Client *next_client;
 }client_node;
 
@@ -34,17 +34,19 @@ typedef struct Group_member_list {
     int total_clients;
     int group_id;
     char *message;
-    //group_node *group;
-    //group_node *group_head;
-    pthread_mutex_t mutex;
-    client_node *group_clients[255];
+    group_node *group;
+    group_node *group_head;
+    //client_node *group_clients[255];
 }group_list;
 
 client_node* client_head = NULL;
 int num_clients = 0;
 group_list group_data[MAX_GROUPS];
+pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
 // get sockaddr, IPv4 or IPv6:
+
 void list_all_clients();
+void remove_from_group(client_node *client);
 
 void *get_in_addr(struct sockaddr *sa)
 {
@@ -55,6 +57,7 @@ void *get_in_addr(struct sockaddr *sa)
 }
 
 void store_new_client(int newfd) {
+     pthread_mutex_lock(&lock);
      client_node *new_client = NULL;
      client_node *tmp_head = client_head;
      new_client = (client_node*)calloc(1,sizeof(client_node));
@@ -62,9 +65,9 @@ void store_new_client(int newfd) {
         new_client->sockfd = newfd;
         new_client->next_client = NULL;
         new_client->msg_type = 0;
-        new_client->buf = "";
+        //new_client->buf = {'\0'};
         if(client_head == NULL){
-           printf("First  client \n");
+           printf("Client added %d \n", newfd);
            client_head = new_client;
         } else {
            while(tmp_head->next_client != NULL)
@@ -75,27 +78,37 @@ void store_new_client(int newfd) {
         num_clients++;
         list_all_clients();
     }
+    pthread_mutex_unlock(&lock);
 }
 
 void delete_existing_client(int fd){
      client_node *delete_client = NULL;
      client_node *prev_node = client_head;
+     /*
+      * Remove from group 
+      */
      /* Node to be deleted is head node*/
      if( client_head && client_head->sockfd == fd) {
-        if(client_head->next_client == NULL) {
-           free(client_head);
-           num_clients--;
+        remove_from_group(prev_node);
+        if(client_head->next_client != NULL) {
            printf("Client deleted %d \n",fd);
+          client_head = client_head->next_client;
         }
-    }else {
+        free(prev_node);
+        num_clients--;
+      } else {
         while(prev_node->next_client != NULL){
              if(prev_node->next_client->sockfd == fd){
                 delete_client= prev_node->next_client;
+                remove_from_group(delete_client);
                 prev_node->next_client = delete_client->next_client;
                 free(delete_client);
                 num_clients--;
                 printf("Client deleted %d \n",fd);
-             }
+                break;
+              } else {
+                  prev_node = prev_node->next_client;
+              }
     }
    }
 }
@@ -114,12 +127,12 @@ client_node* find_client( int client_fd)
 }
 void list_all_clients(){
      client_node* tmp_ptr = client_head;
-     printf("\n  Listing clients =====\n");
+     //printf("\n  Listing clients =====\n");
      while(tmp_ptr != NULL){
-          printf("  Client socket: %d msg %s\n",tmp_ptr->sockfd, tmp_ptr->buf);
+          //printf("  Client socket: %d msg %s\n",tmp_ptr->sockfd, tmp_ptr->buf);
           tmp_ptr = tmp_ptr->next_client;
      }
-     printf("\n  List ended\n");
+     //printf("\n  List ended\n");
 }
 
 void create_dummy_groups(){
@@ -128,12 +141,12 @@ void create_dummy_groups(){
           group_data[index].group_id = index+1;
           group_data[index].total_clients = 0;
           group_data[index].message = "";
-          group_data[index].group_clients[MAX_CLIENTS] = NULL;
-          //group_data[index].group = NULL;
-          //group_data[index].group_head = NULL;
+          //group_data[index].group_clients[MAX_CLIENTS] = NULL;
+          group_data[index].group = NULL;
+          group_data[index].group_head = NULL;
      }
 }
-
+/*
 void add_client_to_group(client_node *client){
      int group = client->group;
      int cur_clients_count = group_data[group].total_clients;
@@ -141,8 +154,9 @@ void add_client_to_group(client_node *client){
      (group_data[group].total_clients)++;
      printf("Client %d added to group %d\n",client->sockfd, group);
 }
-/*
-void add_to_group(client_node *client) {
+*/
+
+void add_client_to_group(client_node *client) {
         group_node *new_node = NULL;
         int group = client->group;
         new_node = (group_node *)calloc(1,sizeof(new_node));
@@ -150,39 +164,72 @@ void add_to_group(client_node *client) {
         new_node->next = NULL;
         (group_data[group].total_clients)++;
         if (group_data[group].group == NULL) {
-           printf(" First client for group %d\n",group);
+           //printf(" First client for group %d\n",group);
            group_data[group].group = new_node; 
            group_data[group].group_head = new_node;
            group_data[group].group_id = group;
         } else {
-           printf(" Client %d added group %d \n",client->sockfd,client->group);
+           //printf(" Client %d added group %d \n",client->sockfd,client->group);
            group_node *tmp_node = group_data[group].group_head;
            while(tmp_node->next != NULL)
              tmp_node = tmp_node->next;
            tmp_node->next = new_node;
         }
 }
-*/
+
+void remove_from_group(client_node *client) {
+      group_node *rem_node = NULL;
+      int group = client->group;
+      rem_node = group_data[group].group_head;
+      if (rem_node->client->sockfd == client->sockfd)
+      {
+           if( group_data[group].group_head->next == NULL) 
+           {
+             group_data[group].group_head = NULL;
+             group_data[group].group = NULL;
+           } else {
+             group_data[group].group =  group_data[group].group->next;
+             group_data[group].group_head = group_data[group].group;
+           }
+           group_data[group].total_clients--;
+      } else {
+        while (rem_node->next !=NULL) {
+            if (rem_node->next->client->sockfd == client->sockfd)
+            {
+                if (rem_node->next->next != NULL)
+                    rem_node->next = rem_node->next->next;
+                else
+                    rem_node->next = NULL;
+                group_data[group].total_clients--;
+            } else {
+                rem_node = rem_node->next;
+            }
+        }
+      }
+
+}
 void read_input_data(int client_fd, char *buff, int size ){
      client_node* client;
      int grp;
-     printf ("======================================\n");
-     printf("Received message %s$ from %d\n",buff, client_fd);
-     printf("Searching for client %d \n",client_fd);
+     pthread_mutex_lock(&lock);
+     //printf ("======================================\n");
+     //printf("Received message \"%s\" from %d\n",buff, client_fd);
+     //printf("Searching for client %d \n",client_fd);
      list_all_clients();
      client = find_client(client_fd);
      if(client != NULL){
-        printf("  Existing Client found %d \n",client->sockfd);
+        //printf("  Existing Client found %d with current stored message \"%s\" \n",client->sockfd,client->buf);
         if( client->msg_type == 0 ){
             grp = atoi(buff);
+            (client->msg_type)++;
             client->group = grp;
             add_client_to_group(client);
         } else {
-            client->buf=buff;
-            printf("  Store message \"%s\" from client %d\n",client->buf, client->sockfd);
+            strncpy(client->buf,buff,900);
+            //printf("  Store message \"%s\" from client %d\n",client->buf, client->sockfd);
         }
-     (client->msg_type)++;
-     printf ("======================================\n");
+     pthread_mutex_unlock(&lock);
+     //printf ("======================================\n");
      }
 }
 void display_group_messages_thread(void *ptr){
@@ -190,19 +237,28 @@ void display_group_messages_thread(void *ptr){
     int client_index = 0;
     int num_clients_in_grp = 0;
     group_node *tmp = NULL;
-    /*while(1) {
+    while(1) {
        sleep(5);
+       printf("DISPLAY MESSAGES\n");
        for( index = 0; index <MAX_GROUPS; index++) {
          num_clients_in_grp = group_data[index].total_clients;
          if (num_clients_in_grp == 0)
             continue;
-         printf(" MESSAGES FROM GROUP %d clients\n", index);
+         printf("==============================================================\n");
+         printf("GROUP %d\n", index);
          printf("Total clients in this group %d \n", num_clients_in_grp);
-          for (client_index = 0; client_index < num_clients_in_grp; client_index++) {
+         tmp = group_data[index].group_head;
+         while (tmp != NULL) {
+            printf("%s \n",tmp->client->buf);
+            tmp = tmp->next;
+         }
+         printf("==============================================================\n");
+         /* for (client_index = 0; client_index < num_clients_in_grp; client_index++) {
                printf("%s\n",group_data[index].group_clients[client_index]->buf);
           }
+         */
        }
-    }*/
+    }
 }
 int main(void)
 {
@@ -226,7 +282,25 @@ int main(void)
     struct addrinfo hints, *ai, *p;
 
     pthread_t t1;
-
+    /*
+     * store_new_client(1);
+    read_input_data(1,"10",2);
+    read_input_data(1,"aaaa",4);
+    read_input_data(1,"bbbb",4);
+    store_new_client(2);
+    read_input_data(2,"20",2);
+    read_input_data(2,"cccc",4);
+    store_new_client(3);
+    read_input_data(3,"10",2);
+    read_input_data(3,"dddd",4);
+    read_input_data(3,"dddd",4);
+    store_new_client(4);
+    read_input_data(4,"30",2);
+    read_input_data(4,"eeee",4);
+    list_all_clients();
+    delete_existing_client(1);
+    delete_existing_client(3);
+    */
     FD_ZERO(&master);    // clear the master and temp sets
     FD_ZERO(&read_fds);
 
