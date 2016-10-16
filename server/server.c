@@ -11,6 +11,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <netdb.h>
+#include <signal.h>
 
 #define PORT "3490"   // port we're listening on
 #define MAX_GROUPS 10
