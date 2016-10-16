@@ -410,6 +410,6 @@ int main(void)
             } // END got new incoming connection
         } // END looping through file descriptors
     } // END for(;;)--and you thought it would never end!
-    pthread_join1(t1, NULL);
+    pthread_join(t1, NULL);
     return 0;
 }
