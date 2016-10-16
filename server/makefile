@@ -3,7 +3,7 @@ CXX=g++
 RM=rm -f
 CPPFLAGS=-g #$(shell root-config --cflags)
 LDFLAGS=-g #$(shell root-config --ldflags)
-LDLIBS=#$(shell root-config --libs)
+LDLIBS= -lpthread #$(shell root-config --libs)
 
 SRCS=server.c
 OBJS=$(subst .c,.o,$(SRCS))
