@@ -12,9 +12,11 @@
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <signal.h>
+#include <pthread.h>
 
 #define PORT "3490"   // port we're listening on
-#define MAX_GROUPS 10
+#define MAX_GROUPS 100
+#define MAX_CLIENTS 255
 typedef struct Client{
     int     sockfd;
     int     msg_type;
@@ -32,14 +34,18 @@ typedef struct Group_member_list {
     int total_clients;
     int group_id;
     char *message;
-    group_node *group;
-    group_node *group_head;
+    //group_node *group;
+    //group_node *group_head;
+    pthread_mutex_t mutex;
+    client_node *group_clients[255];
 }group_list;
 
 client_node* client_head = NULL;
 int num_clients = 0;
 group_list group_data[MAX_GROUPS];
 // get sockaddr, IPv4 or IPv6:
+void list_all_clients();
+
 void *get_in_addr(struct sockaddr *sa)
 {
     if (sa->sa_family == AF_INET) {
@@ -49,36 +55,38 @@ void *get_in_addr(struct sockaddr *sa)
 }
 
 void store_new_client(int newfd) {
-    client_node *new_client = NULL;
-    client_node *tmp_head = client_head;
-    new_client = (client_node*)calloc(1,sizeof(client_node));
-    if(client_head == NULL){
-       //printf("First  client \n");
-       new_client->sockfd = newfd;
-       new_client->next_client = NULL;
-       client_head = new_client;
-    } else {
-    while(tmp_head->next_client != NULL)
-          tmp_head = tmp_head->next_client;
-    if (new_client != NULL){
+     client_node *new_client = NULL;
+     client_node *tmp_head = client_head;
+     new_client = (client_node*)calloc(1,sizeof(client_node));
+     if (new_client != NULL) {
         new_client->sockfd = newfd;
-        tmp_head->next_client = new_client->next_client;
+        new_client->next_client = NULL;
+        new_client->msg_type = 0;
+        new_client->buf = "";
+        if(client_head == NULL){
+           printf("First  client \n");
+           client_head = new_client;
+        } else {
+           while(tmp_head->next_client != NULL)
+                tmp_head = tmp_head->next_client;
+           tmp_head->next_client = new_client;
+           printf("Client added %d \n",newfd);
+        }
+        num_clients++;
+        list_all_clients();
     }
-    }
-    num_clients++;
-    printf("Client added %d \n",newfd);
 }
 
 void delete_existing_client(int fd){
-    client_node *delete_client = NULL;
-    client_node *prev_node = client_head;
-    /* Node to be deleted is head node*/
-    if( client_head && client_head->sockfd == fd) {
-       if(client_head->next_client == NULL) {
-          free(client_head);
-          num_clients--;
-          printf("Client deleted %d \n",fd);
-       }
+     client_node *delete_client = NULL;
+     client_node *prev_node = client_head;
+     /* Node to be deleted is head node*/
+     if( client_head && client_head->sockfd == fd) {
+        if(client_head->next_client == NULL) {
+           free(client_head);
+           num_clients--;
+           printf("Client deleted %d \n",fd);
+        }
     }else {
         while(prev_node->next_client != NULL){
              if(prev_node->next_client->sockfd == fd){
@@ -87,13 +95,14 @@ void delete_existing_client(int fd){
                 free(delete_client);
                 num_clients--;
                 printf("Client deleted %d \n",fd);
-            }
+             }
     }
-  }
+   }
 }
 
 /* Checks whether the client is present in linked list */
-client_node* find_client( int client_fd){
+client_node* find_client( int client_fd)
+{
     client_node* current = client_head;  // Initialize current
     while (current != NULL)
     {
@@ -105,77 +114,98 @@ client_node* find_client( int client_fd){
 }
 void list_all_clients(){
      client_node* tmp_ptr = client_head;
+     printf("\n  Listing clients =====\n");
      while(tmp_ptr != NULL){
-          printf("Client data: %s\n",tmp_ptr->buf);
+          printf("  Client socket: %d msg %s\n",tmp_ptr->sockfd, tmp_ptr->buf);
           tmp_ptr = tmp_ptr->next_client;
-    }
+     }
+     printf("\n  List ended\n");
 }
 
 void create_dummy_groups(){
-    int index = 0;
-    for ( index = 0; index < MAX_GROUPS; index++) {
+     int index = 0;
+     for ( index = 0; index < MAX_GROUPS; index++) {
           group_data[index].group_id = index+1;
           group_data[index].total_clients = 0;
           group_data[index].message = "";
-          group_data[index].group = NULL;
-          group_data[index].group_head = NULL;
-    }
+          group_data[index].group_clients[MAX_CLIENTS] = NULL;
+          //group_data[index].group = NULL;
+          //group_data[index].group_head = NULL;
+     }
 }
-void add_to_group(client_node *client , int group) {
-    if (group < MAX_GROUPS) {
+
+void add_client_to_group(client_node *client){
+     int group = client->group;
+     int cur_clients_count = group_data[group].total_clients;
+     group_data[group].group_clients[cur_clients_count] = client;
+     (group_data[group].total_clients)++;
+     printf("Client %d added to group %d\n",client->sockfd, group);
+}
+/*
+void add_to_group(client_node *client) {
         group_node *new_node = NULL;
+        int group = client->group;
         new_node = (group_node *)calloc(1,sizeof(new_node));
         new_node->client = client;
         new_node->next = NULL;
-        group_data[group].group_id = group;
         (group_data[group].total_clients)++;
         if (group_data[group].group == NULL) {
            printf(" First client for group %d\n",group);
            group_data[group].group = new_node; 
            group_data[group].group_head = new_node;
+           group_data[group].group_id = group;
         } else {
-           printf(" Client added to group %d \n",group);
+           printf(" Client %d added group %d \n",client->sockfd,client->group);
            group_node *tmp_node = group_data[group].group_head;
            while(tmp_node->next != NULL)
              tmp_node = tmp_node->next;
-           tmp_node->client = client;
+           tmp_node->next = new_node;
         }
-    }
 }
-
+*/
 void read_input_data(int client_fd, char *buff, int size ){
      client_node* client;
      int grp;
-     //printf(" Searching for client %d ",client_fd);
+     printf ("======================================\n");
+     printf("Received message %s$ from %d\n",buff, client_fd);
+     printf("Searching for client %d \n",client_fd);
+     list_all_clients();
      client = find_client(client_fd);
      if(client != NULL){
-        //printf("Client found %d \n",client->sockfd);
+        printf("  Existing Client found %d \n",client->sockfd);
         if( client->msg_type == 0 ){
             grp = atoi(buff);
             client->group = grp;
-            add_to_group(client, grp);
-            //printf("Client added to group %d\n",client->group);
+            add_client_to_group(client);
         } else {
             client->buf=buff;
-            //printf("Store message %s from client %d",client->buf, client->sockfd);
+            printf("  Store message \"%s\" from client %d\n",client->buf, client->sockfd);
         }
-        (client->msg_type)++;
-    }
+     (client->msg_type)++;
+     printf ("======================================\n");
+     }
 }
-void zzz(){
+void display_group_messages_thread(void *ptr){
     int index = 0;
+    int client_index = 0;
+    int num_clients_in_grp = 0;
     group_node *tmp = NULL;
-    for( index = 0; index <MAX_GROUPS; index++) {
-       if (group_data[index].total_clients != 0) {
-           tmp = group_data[index].group_head;
-           printf(" MESSAGES FROM GROUP %d clients\n", index);
-           while (tmp != NULL) {
-             printf("%s \n",tmp->client->buf);
+    /*while(1) {
+       sleep(5);
+       for( index = 0; index <MAX_GROUPS; index++) {
+         num_clients_in_grp = group_data[index].total_clients;
+         if (num_clients_in_grp == 0)
+            continue;
+         printf(" MESSAGES FROM GROUP %d clients\n", index);
+         printf("Total clients in this group %d \n", num_clients_in_grp);
+          for (client_index = 0; client_index < num_clients_in_grp; client_index++) {
+               printf("%s\n",group_data[index].group_clients[client_index]->buf);
           }
-      }
-    }
+       }
+    }*/
 }
-int main(void){
+int main(void)
+{
     fd_set master;    // master file descriptor list
     fd_set read_fds;  // temp file descriptor list for select()
     int fdmax;        // maximum file descriptor number
@@ -192,8 +222,10 @@ int main(void){
 
     int yes=1;        // for setsockopt() SO_REUSEADDR, below
     int i, j, rv;
-
+    
     struct addrinfo hints, *ai, *p;
+
+    pthread_t t1;
 
     FD_ZERO(&master);    // clear the master and temp sets
     FD_ZERO(&read_fds);
@@ -245,9 +277,10 @@ int main(void){
     fdmax = listener; // so far, it's this one
     create_dummy_groups();
     printf("Server: Started \n");
+    pthread_create(&t1, NULL, (void *) &display_group_messages_thread, NULL);
+
     // main loop
     for(;;) {
-        if(signal(SIGTSTP, zzz)==0) 
         read_fds = master; // copy it
         if (select(fdmax+1, &read_fds, NULL, NULL, NULL) == -1) {
             perror("select");
@@ -303,6 +336,6 @@ int main(void){
             } // END got new incoming connection
         } // END looping through file descriptors
     } // END for(;;)--and you thought it would never end!
-
+    pthread_join1(t1, NULL);
     return 0;
 }
