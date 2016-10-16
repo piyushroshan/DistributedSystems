@@ -27,3 +27,7 @@
 *.exe
 *.out
 *.app
+
+#Apps
+client/client
+server/server
