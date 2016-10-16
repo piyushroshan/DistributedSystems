@@ -49,36 +49,36 @@ void *get_in_addr(struct sockaddr *sa)
 }
 
 void store_new_client(int newfd) {
-     client_node *new_client = NULL;
-     client_node *tmp_head = client_head;
-     new_client = (client_node*)calloc(1,sizeof(client_node));
-     if(client_head == NULL){
-        //printf("First  client \n");
+    client_node *new_client = NULL;
+    client_node *tmp_head = client_head;
+    new_client = (client_node*)calloc(1,sizeof(client_node));
+    if(client_head == NULL){
+       //printf("First  client \n");
+       new_client->sockfd = newfd;
+       new_client->next_client = NULL;
+       client_head = new_client;
+    } else {
+    while(tmp_head->next_client != NULL)
+          tmp_head = tmp_head->next_client;
+    if (new_client != NULL){
         new_client->sockfd = newfd;
-        new_client->next_client = NULL;
-        client_head = new_client;
-     } else {
-     while(tmp_head->next_client != NULL)
-           tmp_head = tmp_head->next_client;
-     if (new_client != NULL){
-         new_client->sockfd = newfd;
-         tmp_head->next_client = new_client->next_client;
-     }
-     }
-     num_clients++;
-     printf("Client added %d \n",newfd);
+        tmp_head->next_client = new_client->next_client;
+    }
+    }
+    num_clients++;
+    printf("Client added %d \n",newfd);
 }
 
 void delete_existing_client(int fd){
-     client_node *delete_client = NULL;
-     client_node *prev_node = client_head;
-     /* Node to be deleted is head node*/
-     if( client_head && client_head->sockfd == fd) {
-        if(client_head->next_client == NULL) {
-           free(client_head);
-           num_clients--;
-           printf("Client deleted %d \n",fd);
-        }
+    client_node *delete_client = NULL;
+    client_node *prev_node = client_head;
+    /* Node to be deleted is head node*/
+    if( client_head && client_head->sockfd == fd) {
+       if(client_head->next_client == NULL) {
+          free(client_head);
+          num_clients--;
+          printf("Client deleted %d \n",fd);
+       }
     }else {
         while(prev_node->next_client != NULL){
              if(prev_node->next_client->sockfd == fd){
@@ -87,14 +87,13 @@ void delete_existing_client(int fd){
                 free(delete_client);
                 num_clients--;
                 printf("Client deleted %d \n",fd);
-             }
+            }
     }
-   }
+  }
 }
 
 /* Checks whether the client is present in linked list */
-client_node* find_client( int client_fd)
-{
+client_node* find_client( int client_fd){
     client_node* current = client_head;  // Initialize current
     while (current != NULL)
     {
@@ -109,21 +108,21 @@ void list_all_clients(){
      while(tmp_ptr != NULL){
           printf("Client data: %s\n",tmp_ptr->buf);
           tmp_ptr = tmp_ptr->next_client;
-     }
+    }
 }
 
 void create_dummy_groups(){
-     int index = 0;
-     for ( index = 0; index < MAX_GROUPS; index++) {
+    int index = 0;
+    for ( index = 0; index < MAX_GROUPS; index++) {
           group_data[index].group_id = index+1;
           group_data[index].total_clients = 0;
           group_data[index].message = "";
           group_data[index].group = NULL;
           group_data[index].group_head = NULL;
-     }
+    }
 }
 void add_to_group(client_node *client , int group) {
-     if (group < MAX_GROUPS) {
+    if (group < MAX_GROUPS) {
         group_node *new_node = NULL;
         new_node = (group_node *)calloc(1,sizeof(new_node));
         new_node->client = client;
@@ -160,8 +159,8 @@ void read_input_data(int client_fd, char *buff, int size ){
             client->buf=buff;
             //printf("Store message %s from client %d",client->buf, client->sockfd);
         }
-     (client->msg_type)++;
-     }
+        (client->msg_type)++;
+    }
 }
 void zzz(){
     int index = 0;
@@ -172,12 +171,11 @@ void zzz(){
            printf(" MESSAGES FROM GROUP %d clients\n", index);
            while (tmp != NULL) {
              printf("%s \n",tmp->client->buf);
-           }
-       }
+          }
+      }
     }
 }
-int main(void)
-{
+int main(void){
     fd_set master;    // master file descriptor list
     fd_set read_fds;  // temp file descriptor list for select()
     int fdmax;        // maximum file descriptor number
